@@ -1,0 +1,187 @@
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const multer = require('multer');
+const path = require('path');
+const session = require('express-session');
+const { OpenAI } = require('openai');
+const Stripe = require('stripe');
+const fs = require('fs');
+
+const app = express();
+const port = process.env.PORT || 3000;
+const upload = multer({ dest: 'uploads/' });
+
+const db = new sqlite3.Database('db.sqlite');
+db.serialize(() => {
+  db.run("CREATE TABLE IF NOT EXISTS subscribers (email TEXT UNIQUE)");
+});
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY); // Agrega en env vars
+
+app.use(express.static('public'));
+app.use(express.json());
+app.use(session({
+  secret: 'gio-secret-key',
+  resave: false,
+  saveUninitialized: true
+}));
+
+function isAuthenticated(req, res, next) {
+  if (req.session.authenticated) {
+    return next();
+  } else {
+    res.redirect('/login');
+  }
+}
+
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === 'admin' && password === 'gio2026') {
+    req.session.authenticated = true;
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ success: false, message: 'Credenciales incorrectas' });
+  }
+});
+
+app.get('/logout', (req, res) => {
+  req.session.destroy();
+  res.redirect('/login');
+});
+
+app.get('/', isAuthenticated, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.post('/subscribe', (req, res) => {
+  const { email } = req.body;
+  db.run("INSERT OR IGNORE INTO subscribers (email) VALUES (?)", [email], (err) => {
+    if (err) return res.status(500).json({ error: 'Error al suscribir: ' + err.message });
+    res.json({ message: 'Suscrito exitosamente' });
+  });
+});
+
+// Análisis cabello con Vision
+app.post('/analyze-hair', upload.single('photo'), async (req, res) => {
+  try {
+    const imagePath = req.file.path;
+    const base64Image = fs.readFileSync(imagePath).toString('base64');
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Analiza esta foto de cabello y describe el tipo (e.g., liso, ondulado, rizado), porosidad (baja, media, alta), densidad (fina, media, gruesa), y color dominante. Proporciona un resumen claro y conciso." },
+            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}`, detail: "high" } }
+          ]
+        }
+      ],
+      max_tokens: 300
+    });
+    fs.unlinkSync(imagePath); // Limpia upload temporal
+    res.json({ analysis: completion.choices[0].message.content });
+  } catch (error) {
+    res.json({ analysis: 'Tipo: Liso, Porosidad: Media, Densidad: Alta (simulación)', error: error.message });
+  }
+});
+
+app.post('/recommend', async (req, res) => {
+  const { analysis } = req.body;
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: `Basado en ${analysis}, recomienda método de instalación, largo ideal, color matching, y cantidad de extensiones para un look natural.` }]
+    });
+    res.json({ recommendation: completion.choices[0].message.content });
+  } catch (error) {
+    res.json({ recommendation: 'Recomendación simulada: Tape-In, 18 pulgadas, castaño.', error: error.message });
+  }
+});
+
+app.post('/optimize-bio', async (req, res) => {
+  const { currentBio } = req.body;
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: `Optimiza esta bio para Instagram de un salón de belleza: ${currentBio}` }]
+    });
+    res.json({ optimized: completion.choices[0].message.content });
+  } catch (error) {
+    res.json({ optimized: 'Bio optimizada simulada', error: error.message });
+  }
+});
+
+app.post('/generate-content', async (req, res) => {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: 'Genera una idea atractiva para Reel/Story sobre extensiones de cabello, menciona Extendia IA, promoción cruzada con tienda y Booksy.' }]
+    });
+    res.json({ idea: completion.choices[0].message.content });
+  } catch (error) {
+    res.json({ idea: 'Idea simulada: ¡Prueba Extendia IA gratis y agenda en Booksy!', error: error.message });
+  }
+});
+
+app.post('/generate-campaign', async (req, res) => {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: 'Genera una campaña para Meta sobre promos de belleza, integra Extendia y Stripe para compras.' }]
+    });
+    res.json({ campaign: completion.choices[0].message.content });
+  } catch (error) {
+    res.json({ campaign: 'Campaña simulada: Envío gratis +$50. ¡Prueba virtual en Extendia y compra!', error: error.message });
+  }
+});
+
+// Stripe: Crear sesión checkout
+app.post('/create-checkout-session', async (req, res) => {
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: { name: 'Extensiones de Cabello Remy' },
+            unit_amount: 5000, // $50.00
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url: `${req.headers.origin}/success`,
+      cancel_url: `${req.headers.origin}/cancel`,
+    });
+    res.json({ id: session.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Webhook Stripe (para fulfillment, e.g. email confirm)
+app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+  if (event.type === 'checkout.session.completed') {
+    // Maneja fulfillment, e.g. envía email
+    console.log('Pago completado!');
+  }
+  res.json({ received: true });
+});
+
+app.listen(port, () => {
+  console.log(`Servidor en http://localhost:${port}`);
+});
