@@ -1,0 +1,50 @@
+:root{
+  --bg:#0b0b10;
+  --card:#12121a;
+  --text:#f6f2ff;
+  --muted:#b8b1c9;
+  --gold:#d8b56a;
+  --pink:#ff4fd8;
+  --line:rgba(255,255,255,.08);
+}
+
+body{
+  background: radial-gradient(1200px 600px at 10% 10%, rgba(255,79,216,.18), transparent),
+              radial-gradient(1000px 600px at 90% 20%, rgba(216,181,106,.18), transparent),
+              var(--bg) !important;
+  color:var(--text) !important;
+}
+
+a{ color:var(--gold); }
+a:hover{ color:var(--pink); }
+
+.card{
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)) !important;
+  border:1px solid var(--line) !important;
+  border-radius:18px !important;
+}
+
+.btn-dark{
+  background: linear-gradient(135deg, var(--gold), #b58a2f) !important;
+  border:0 !important;
+  color:#111 !important;
+  font-weight:700 !important;
+}
+
+.btn-outline-dark{
+  border:1px solid var(--line) !important;
+  color:var(--text) !important;
+  background: rgba(255,255,255,.04) !important;
+}
+
+.btn-outline-dark:hover{
+  border-color:rgba(255,79,216,.5) !important;
+}
+
+h1,h2,h3,h4,h5{
+  letter-spacing:.2px;
+}
+
+.small-muted{
+  color:var(--muted);
+}
